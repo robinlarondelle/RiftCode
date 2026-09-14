@@ -1,8 +1,7 @@
 {
-  "version": "0.6.4",
+  "version": "0.6.5",
   "releaseNotes": [
-    "Fixed Windows updates so PowerShell opens in an independent visible console and survives the Rift process closing.",
-    "Rift now remains open while the package downloads and closes only when the installer is ready to replace it.",
-    "The update button no longer remains stuck after handing installation to PowerShell."
+    "Fixed agent detection on macOS and Linux when Rift is launched from Finder, the Dock or the rift command: the app now resolves the login shell PATH so Claude Code and OpenCode installed via npm, nvm, Homebrew or the native installers are found.",
+    "Common CLI install locations such as /opt/homebrew/bin, /usr/local/bin and ~/.local/bin are always searched even if the shell probe fails."
   ]
 }
