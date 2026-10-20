@@ -1595,7 +1595,12 @@ export class AppComponent implements OnInit, OnDestroy {
     }
     if (event.key.toLowerCase() === "n" && !event.shiftKey && !event.altKey) {
       if (this.isTextEntryTarget(event.target) && !this.noteComposerOpen()) return;
-      if (this.startNoteFromKeyboard()) event.preventDefault();
+      if (this.startSelectionToolFromKeyboard("note")) event.preventDefault();
+      return;
+    }
+    if (event.key.toLowerCase() === "k" && !event.shiftKey && !event.altKey) {
+      if (this.isTextEntryTarget(event.target) && !this.questionComposerOpen()) return;
+      if (this.startSelectionToolFromKeyboard("question")) event.preventDefault();
     }
   }
 
@@ -1603,12 +1608,14 @@ export class AppComponent implements OnInit, OnDestroy {
     return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
   }
 
-  private startNoteFromKeyboard(): boolean {
+  private startSelectionToolFromKeyboard(tool: "note" | "question"): boolean {
     if (this.chatPageOpen() || this.reviewPageOpen() || this.editMode()) return false;
-    if (this.noteComposerOpen()) {
-      document.getElementById("review-note")?.focus();
+    const composerOpen = tool === "note" ? this.noteComposerOpen() : this.questionComposerOpen();
+    if (composerOpen) {
+      document.getElementById(tool === "note" ? "review-note" : "explain-question")?.focus();
       return true;
     }
+    if (tool === "question" && (!this.selectedAgent() || this.agentRunning())) return false;
     const rows = this.rows();
     const range = this.selectedRange();
     let index = range?.focus ?? -1;
@@ -1623,7 +1630,12 @@ export class AppComponent implements OnInit, OnDestroy {
     const x = bounds ? bounds.left + 24 : window.innerWidth / 2;
     const y = bounds ? bounds.top + 18 : window.innerHeight / 2;
     this.showTools(index, row, x, y);
-    this.startNote();
+    if (tool === "note") {
+      this.startNote();
+    } else {
+      this.startExplain();
+      requestAnimationFrame(() => document.getElementById("explain-question")?.focus());
+    }
     return true;
   }
 
