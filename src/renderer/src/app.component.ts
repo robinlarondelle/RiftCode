@@ -1591,7 +1591,40 @@ export class AppComponent implements OnInit, OnDestroy {
     if (event.key.toLowerCase() === "s" && this.selectedFileHasEdits()) {
       event.preventDefault();
       void this.saveCurrentFile();
+      return;
     }
+    if (event.key.toLowerCase() === "n" && !event.shiftKey && !event.altKey) {
+      if (this.isTextEntryTarget(event.target) && !this.noteComposerOpen()) return;
+      if (this.startNoteFromKeyboard()) event.preventDefault();
+    }
+  }
+
+  private isTextEntryTarget(target: EventTarget | null): boolean {
+    return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement || (target instanceof HTMLElement && target.isContentEditable);
+  }
+
+  private startNoteFromKeyboard(): boolean {
+    if (this.chatPageOpen() || this.reviewPageOpen() || this.editMode()) return false;
+    if (this.noteComposerOpen()) {
+      document.getElementById("review-note")?.focus();
+      return true;
+    }
+    const rows = this.rows();
+    const range = this.selectedRange();
+    let index = range?.focus ?? -1;
+    if (index < 0) {
+      const focused = document.activeElement?.closest("[data-diff-index]");
+      index = focused instanceof HTMLElement ? Number(focused.dataset["diffIndex"]) : -1;
+    }
+    const row = rows[index];
+    if (!row || !this.isSelectable(row)) return false;
+    const element = document.querySelector(`[data-diff-index="${index}"]`);
+    const bounds = element?.getBoundingClientRect();
+    const x = bounds ? bounds.left + 24 : window.innerWidth / 2;
+    const y = bounds ? bounds.top + 18 : window.innerHeight / 2;
+    this.showTools(index, row, x, y);
+    this.startNote();
+    return true;
   }
 
   openRepositorySearch(): void {
