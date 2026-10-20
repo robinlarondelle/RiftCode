@@ -10,7 +10,7 @@ import {
   signal,
   ViewChild
 } from "@angular/core";
-import { marked } from "marked";
+import { Marked, type Tokens } from "marked";
 import type { AgentConversationHistory, AgentId, AgentMode, AgentOption, AgentRunResult, AgentSession, AgentStreamEvent, AgentToolEvent, ChangedFile, ContextResourcePath, FilePatch, GitHubAuthStatus, RepositoryFileView, RepositorySearchResult, RepositorySnapshot, UpdateStatus } from "../../shared/contracts";
 import versionManifest from "../../../version.json";
 
@@ -527,6 +527,14 @@ function buildExplorerEntries(
   return entries;
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&(?!(#\d+|#x[\da-f]+|[a-z]+);)/gi, "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
 @Component({
   selector: "rift-root",
   standalone: true,
@@ -680,6 +688,18 @@ export class AppComponent implements OnInit, OnDestroy {
     ));
   });
   readonly repositoryPaths = signal<string[]>([]);
+  readonly linkablePaths = computed(() => new Set([
+    ...this.repositoryPaths(),
+    ...(this.repository()?.files.map((file) => file.path) ?? [])
+  ]));
+  readonly repositoryFileTargetLine = signal<number | null>(null);
+  private readonly markdown = new Marked({
+    breaks: true,
+    renderer: {
+      codespan: (token) => this.renderCodespan(token),
+      text: (token) => this.renderText(token)
+    }
+  });
   readonly repositoryPathsLoading = signal(false);
   readonly repositoryPathsError = signal<string | null>(null);
   readonly expandedExplorerFolders = signal<ReadonlySet<string>>(new Set());
@@ -1467,7 +1487,7 @@ export class AppComponent implements OnInit, OnDestroy {
     void this.explainSelection();
   }
 
-  selectFile(path: string): void {
+  selectFile(path: string): Promise<void> {
     this.fileToolsMenu.set(null);
     this.chatPageOpen.set(false);
     this.reviewPageOpen.set(false);
@@ -1476,13 +1496,14 @@ export class AppComponent implements OnInit, OnDestroy {
     this.repositoryFileView.set(null);
     this.repositoryFileLoading.set(false);
     this.repositoryFileError.set(null);
-    if (path === this.selectedPath() && !wasRepositoryView) return;
+    this.repositoryFileTargetLine.set(null);
+    if (path === this.selectedPath() && !wasRepositoryView) return Promise.resolve();
     this.selectedPath.set(path);
     this.selectedRange.set(null);
     this.allChangesSelected.set(false);
     this.resetHorizontalScroll();
-    void this.loadPatch(path);
     void this.loadEditableFile(path);
+    return this.loadPatch(path);
   }
 
   toggleEditMode(): void {
@@ -1710,7 +1731,7 @@ export class AppComponent implements OnInit, OnDestroy {
   private async openRepositoryPath(path: string): Promise<void> {
     if (this.sidebarView() === "explorer") this.revealExplorerPath(path);
     if (this.repository()?.files.some((file) => file.path === path)) {
-      this.selectFile(path);
+      await this.selectFile(path);
       return;
     }
     const request = ++this.repositoryViewRequest;
@@ -1725,6 +1746,7 @@ export class AppComponent implements OnInit, OnDestroy {
     this.highlightedRows.set(null);
     this.repositoryFileView.set(null);
     this.repositoryFileError.set(null);
+    this.repositoryFileTargetLine.set(null);
     this.repositoryFileLoading.set(true);
     this.resetHorizontalScroll();
     try {
@@ -3040,32 +3062,69 @@ export class AppComponent implements OnInit, OnDestroy {
 
   renderMarkdown(markdown: string): string {
     const escaped = markdown.replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-    return marked.parse(escaped, { async: false, breaks: true });
+    return this.markdown.parse(escaped, { async: false }) as string;
   }
 
-  renderReviewMarkdown(markdown: string): string {
-    let linked = markdown;
-    const replacements: Array<[string, string]> = [];
-    const paths = [...(this.repository()?.files.map((file) => file.path) ?? [])].sort((left, right) => right.length - left.length);
-    for (const [index, path] of paths.entries()) {
-      if (!linked.includes(path)) continue;
-      const token = `RIFTFILETOKEN${index}X`;
-      linked = linked.split(path).join(token);
-      replacements.push([token, `[${path}](rift-file:${encodeURIComponent(path)})`]);
-    }
-    linked = linked.replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-    for (const [token, link] of replacements) linked = linked.replaceAll(token, link);
-    return marked.parse(linked, { async: false, breaks: true });
+  private renderCodespan(token: Tokens.Codespan): string {
+    const reference = this.fileReference(token.text);
+    const code = `<code>${escapeHtml(token.text)}</code>`;
+    return reference ? this.fileLink(reference, code) : code;
   }
 
-  openReviewFile(event: MouseEvent): void {
+  private renderText(token: Tokens.Text | Tokens.Escape): string | false {
+    if (token.type !== "text" || ("tokens" in token && token.tokens)) return false;
+    if (!/[./\\]/.test(token.text)) return false;
+    return escapeHtml(token.text).replace(/\S+/g, (word) => {
+      const match = word.match(/^([(\["']*)(.*?)([.,;:!?)\]}"']*)$/);
+      if (!match) return word;
+      const reference = this.fileReference(match[2]);
+      return reference ? `${match[1]}${this.fileLink(reference, match[2])}${match[3]}` : word;
+    });
+  }
+
+  private fileReference(text: string): { path: string; line?: number } | null {
+    const candidate = text.trim().replace(/^\.\//, "");
+    const match = candidate.match(/^(.+?)(?::(\d+)(?::\d+)?)?$/);
+    if (!match || !this.linkablePaths().has(match[1])) return null;
+    return { path: match[1], line: match[2] ? Number(match[2]) : undefined };
+  }
+
+  private fileLink(reference: { path: string; line?: number }, label: string): string {
+    const href = `rift-file:${encodeURIComponent(reference.path)}${reference.line ? `:${reference.line}` : ""}`;
+    return `<a href="${href}" class="file-link" title="Open ${escapeHtml(reference.path)}">${label}</a>`;
+  }
+
+  openMarkdownFile(event: MouseEvent): void {
     if (!(event.target instanceof Element)) return;
     const link = event.target.closest<HTMLAnchorElement>("a[href^='rift-file:']");
     if (!link) return;
     event.preventDefault();
-    const path = decodeURIComponent(link.getAttribute("href")!.slice("rift-file:".length));
-    if (!this.repository()?.files.some((file) => file.path === path)) return;
-    this.selectFile(path);
+    const match = link.getAttribute("href")!.slice("rift-file:".length).match(/^(.*?)(?::(\d+))?$/);
+    if (!match) return;
+    const path = decodeURIComponent(match[1]);
+    if (!this.linkablePaths().has(path)) return;
+    void this.openRepositoryLine(path, match[2] ? Number(match[2]) : null);
+  }
+
+  private async openRepositoryLine(path: string, line: number | null): Promise<void> {
+    await this.openRepositoryPath(path);
+    if (line === null || this.selectedPath() !== path) return;
+    if (this.repositoryFileView()) {
+      this.repositoryFileTargetLine.set(line);
+      requestAnimationFrame(() => {
+        this.diffScroll?.nativeElement.querySelector(".line-target")?.scrollIntoView({ block: "center" });
+      });
+      return;
+    }
+    const rows = this.rows();
+    let index = rows.findIndex((row) => row.newLine === line);
+    if (index < 0) index = rows.findIndex((row) => row.newLine !== undefined && row.newLine > line);
+    if (index < 0) index = rows.length - 1;
+    if (index < 0) return;
+    this.selectedRange.set({ anchor: index, focus: index });
+    requestAnimationFrame(() => {
+      this.diffScroll?.nativeElement.querySelector(".line-selected")?.scrollIntoView({ block: "center" });
+    });
   }
 
   private resolveAnchorIndex(startLine: number, diff: string): number {
@@ -3123,14 +3182,7 @@ export class AppComponent implements OnInit, OnDestroy {
       this.repositoryFileLoading.set(false);
       this.repositoryFileError.set(null);
     }
-    if (this.sidebarView() === "explorer" && this.explorerShowAll()) {
-      void this.loadRepositoryPaths();
-    } else {
-      this.repositoryPathsRequest += 1;
-      this.repositoryPaths.set([]);
-      this.repositoryPathsLoading.set(false);
-      this.repositoryPathsError.set(null);
-    }
+    void this.loadRepositoryPaths();
     if (comparisonChanged) {
       this.reviewQuestion.set("");
       this.reviewResult.set(null);

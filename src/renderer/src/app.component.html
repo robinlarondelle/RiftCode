@@ -284,7 +284,7 @@
                       </div>
                     </section>
                   }
-                  @if (result.explanation) { <div class="markdown-response review-markdown" (click)="openReviewFile($event)" [innerHTML]="renderReviewMarkdown(result.explanation)"></div> }
+                  @if (result.explanation) { <div class="markdown-response review-markdown" (click)="openMarkdownFile($event)" [innerHTML]="renderMarkdown(result.explanation)"></div> }
                 }
                 @if (agentRunning() && !reviewResult()?.explanation) { <div class="review-waiting"><span class="ai-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 1c0 6.1-4.9 11-11 11 6.1 0 11 4.9 11 11 0-6.1 4.9-11 11-11-6.1 0-11-4.9-11-11Z"/><circle cx="19" cy="5" r="2"/></svg></span><span><strong>Reviewing the comparison</strong><small>Findings will appear here as the agent works.</small></span></div> }
                 @if (reviewError()) { <p class="agent-error">{{ reviewError() }}</p> }
@@ -357,7 +357,7 @@
               @if (conversation.attachedReview) {
                 <details class="review-chat-attachment">
                   <summary><span class="review-mark">R</span><span><strong>Code review attached</strong><small>Use your message to choose what to fix and what to leave</small></span><i aria-hidden="true">⌄</i></summary>
-                  <div class="markdown-response review-markdown" (click)="openReviewFile($event)" [innerHTML]="renderReviewMarkdown(conversation.attachedReview)"></div>
+                  <div class="markdown-response review-markdown" (click)="openMarkdownFile($event)" [innerHTML]="renderMarkdown(conversation.attachedReview)"></div>
                 </details>
               }
               @for (turn of conversation.history; track $index) {
@@ -373,7 +373,7 @@
                 </div>
                 <div class="chat-message assistant-message historical-message">
                   <span>{{ agentLabel(conversation.agent) }} · {{ modelLabel(conversation.agent, conversation.model) }}</span>
-                  @if (turn.result?.explanation) { <div class="markdown-response" [innerHTML]="renderMarkdown(turn.result!.explanation)"></div> }
+                  @if (turn.result?.explanation) { <div class="markdown-response" (click)="openMarkdownFile($event)" [innerHTML]="renderMarkdown(turn.result!.explanation)"></div> }
                   @if (turn.error) {
                     @if (isAgentAuthError(turn.error)) {
                       <div class="agent-auth-error"><span>!</span><div><strong>Reconnect {{ agentLabel(conversation.agent) }}</strong><p>{{ turn.error }}</p></div></div>
@@ -412,7 +412,7 @@
                       }
                       </div>
                     }
-                    @if (result.explanation) { <div class="markdown-response" [innerHTML]="renderMarkdown(result.explanation)"></div> }
+                    @if (result.explanation) { <div class="markdown-response" (click)="openMarkdownFile($event)" [innerHTML]="renderMarkdown(result.explanation)"></div> }
                   }
                   @if (conversation.status === "running") {
                     <div class="agent-pending"><span class="ai-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 1c0 6.1-4.9 11-11 11 6.1 0 11 4.9 11 11 0-6.1 4.9-11 11-11-6.1 0-11-4.9-11-11Z"/><circle cx="19" cy="5" r="2"/></svg></span><span><strong>Agent is working <i class="loading-spinner" aria-hidden="true"></i></strong><small>Tool calls and output appear here live</small></span></div>
@@ -572,7 +572,7 @@
             @if (repositoryFile.truncated) { <p class="repository-file-notice">Large file preview truncated</p> }
             <div class="repository-file-lines">
               @for (line of repositoryFileLines(); track $index) {
-                <div class="repository-file-row"><span>{{ $index + 1 }}</span><code>{{ line || " " }}</code></div>
+                <div class="repository-file-row" [class.line-target]="repositoryFileTargetLine() === $index + 1"><span>{{ $index + 1 }}</span><code>{{ line || " " }}</code></div>
               }
             </div>
           } @else if (patch()?.binary) {
